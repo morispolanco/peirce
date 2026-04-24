@@ -18,6 +18,7 @@ ADMIN_PASS = "Mita1962"
 conn = sqlite3.connect("app.db", check_same_thread=False)
 c = conn.cursor()
 
+# Users
 c.execute("""
 CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY,
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
 )
 """)
 
+# Historial
 c.execute("""
 CREATE TABLE IF NOT EXISTS historial (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,6 +37,7 @@ CREATE TABLE IF NOT EXISTS historial (
 )
 """)
 
+# Usage (estructura nueva)
 c.execute("""
 CREATE TABLE IF NOT EXISTS usage (
     username TEXT PRIMARY KEY,
@@ -43,6 +46,19 @@ CREATE TABLE IF NOT EXISTS usage (
 )
 """)
 
+conn.commit()
+
+# -----------------------------
+# MIGRACIÓN AUTOMÁTICA
+# -----------------------------
+try:
+    c.execute("ALTER TABLE usage ADD COLUMN max_requests INTEGER DEFAULT 10")
+    conn.commit()
+except:
+    pass  # ya existe
+
+# Asegurar datos
+c.execute("UPDATE usage SET max_requests = 10 WHERE max_requests IS NULL")
 conn.commit()
 
 # -----------------------------
@@ -82,7 +98,7 @@ def login_usuario(username, password):
 def get_usage_data(username):
     c.execute("SELECT requests, max_requests FROM usage WHERE username=?", (username,))
     row = c.fetchone()
-    return row if row else (0, 0)
+    return row if row else (0, 10)
 
 def increment_usage(username):
     c.execute("UPDATE usage SET requests = requests + 1 WHERE username=?", (username,))
