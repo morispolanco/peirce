@@ -11,7 +11,6 @@ st.set_page_config(page_title="Vigía SaaS", layout="wide")
 
 ADMIN_USER = "mp"
 ADMIN_PASS = "Mita1962"
-MAX_REQUESTS = 10
 
 # -----------------------------
 # DB
@@ -39,7 +38,8 @@ CREATE TABLE IF NOT EXISTS historial (
 c.execute("""
 CREATE TABLE IF NOT EXISTS usage (
     username TEXT PRIMARY KEY,
-    requests INTEGER
+    requests INTEGER,
+    max_requests INTEGER
 )
 """)
 
@@ -51,10 +51,14 @@ conn.commit()
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-def crear_usuario(username, password):
+def crear_usuario(username, password, max_requests):
     try:
-        c.execute("INSERT INTO users VALUES (?, ?)", (username, hash_password(password)))
-        c.execute("INSERT INTO usage VALUES (?, ?)", (username, 0))
+        c.execute("INSERT INTO users VALUES (?, ?)", 
+                  (username, hash_password(password)))
+        
+        c.execute("INSERT INTO usage VALUES (?, ?, ?)", 
+                  (username, 0, max_requests))
+        
         conn.commit()
         return True
     except:
@@ -75,13 +79,22 @@ def login_usuario(username, password):
     
     return "user" if c.fetchone() else None
 
-def get_usage(username):
-    c.execute("SELECT requests FROM usage WHERE username=?", (username,))
+def get_usage_data(username):
+    c.execute("SELECT requests, max_requests FROM usage WHERE username=?", (username,))
     row = c.fetchone()
-    return row[0] if row else 0
+    return row if row else (0, 0)
 
 def increment_usage(username):
     c.execute("UPDATE usage SET requests = requests + 1 WHERE username=?", (username,))
+    conn.commit()
+
+def update_max_requests(username, new_limit):
+    c.execute("UPDATE usage SET max_requests=? WHERE username=?", 
+              (new_limit, username))
+    conn.commit()
+
+def reset_usage(username):
+    c.execute("UPDATE usage SET requests=0 WHERE username=?", (username,))
     conn.commit()
 
 def save_historial(username, problema, resultado):
@@ -154,36 +167,58 @@ if st.session_state.role == "admin":
         st.session_state.role = None
         st.rerun()
 
+    # Crear usuario
     st.subheader("👥 Crear usuario")
 
     new_user = st.text_input("Nuevo usuario")
     new_pass = st.text_input("Contraseña", type="password")
+    new_limit = st.number_input("Límite de usos", min_value=1, value=10)
 
-    if st.button("Crear"):
-        if crear_usuario(new_user, new_pass):
+    if st.button("Crear usuario"):
+        if crear_usuario(new_user, new_pass, new_limit):
             st.success("Usuario creado")
         else:
             st.error("Ya existe")
 
-    st.subheader("🗑️ Eliminar usuario")
+    # Configurar límites
+    st.subheader("⚙️ Configurar límites")
 
     usuarios = get_all_users()
 
     if usuarios:
-        user_del = st.selectbox("Seleccionar usuario", usuarios)
+        user_sel = st.selectbox("Seleccionar usuario", usuarios)
+
+        uso_actual, current_limit = get_usage_data(user_sel)
+
+        new_limit = st.number_input(
+            "Nuevo límite",
+            min_value=1,
+            value=current_limit
+        )
+
+        if st.button("Actualizar límite"):
+            update_max_requests(user_sel, new_limit)
+            st.success("Límite actualizado")
+
+        if st.button("Resetear uso"):
+            reset_usage(user_sel)
+            st.success("Uso reiniciado")
+
+    # Eliminar usuario
+    st.subheader("🗑️ Eliminar usuario")
+
+    if usuarios:
+        user_del = st.selectbox("Eliminar usuario", usuarios, key="delete")
 
         if st.button("Eliminar"):
             eliminar_usuario(user_del)
             st.success("Usuario eliminado")
             st.rerun()
 
-    else:
-        st.info("No hay usuarios")
-
     st.stop()
 
 # -----------------------------
-# APP USUARIO NORMAL
+# APP USUARIO
 # -----------------------------
 st.title(f"🧠 Vigía - Usuario: {st.session_state.user}")
 
@@ -192,10 +227,10 @@ if st.button("Cerrar sesión"):
     st.session_state.role = None
     st.rerun()
 
-uso_actual = get_usage(st.session_state.user)
+uso_actual, max_uso = get_usage_data(st.session_state.user)
 
-if uso_actual >= MAX_REQUESTS:
-    st.warning("Límite alcanzado")
+if uso_actual >= max_uso:
+    st.warning("Has alcanzado tu límite de uso")
     st.stop()
 
 # Inputs
@@ -250,4 +285,4 @@ for h in get_historial(st.session_state.user)[::-1]:
         st.write(h[1])
 
 # Sidebar
-st.sidebar.write(f"Uso: {uso_actual}/{MAX_REQUESTS}")
+st.sidebar.write(f"Uso: {uso_actual}/{max_uso}")
